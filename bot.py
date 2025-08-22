@@ -1,11 +1,13 @@
+import os
 import discord
 import requests
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import asyncio
 
-TOKEN = "MTQwODUxNTkzOTY3NDIzMDc5NA.Gr88qu.XWF25BtwtYs41eHb6T0gWW6p6OS3M3MKcgPMNE"   # poné acá el token de tu bot
-GUILD_ID = "50ARBp7hS8Wda4qV57Xwqg"   # poné acá el ID de tu gremio
-CHANNEL_ID = 718543981612368032  # poné acá el ID del canal donde querés que publique los rankings
+# Variables de entorno
+TOKEN = os.environ['TOKEN']
+GUILD_ID = os.environ['GUILD_ID']
+CHANNEL_ID = int(os.environ['CHANNEL_ID'])
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
@@ -28,7 +30,12 @@ def obtener_ranking(tipo: str, limite: int = 10):
             stats = player["LifetimeStatistics"]
 
             if tipo == "total":
-                valor = stats["PvE"]["Total"] + stats["PvP"]["Total"] + stats["Gathering"]["All"]["Total"] + stats["Crafting"]["Total"]
+                valor = (
+                    stats["PvE"]["Total"]
+                    + stats["PvP"]["Total"]
+                    + stats["Gathering"]["All"]["Total"]
+                    + stats["Crafting"]["Total"]
+                )
             elif tipo == "pvp":
                 valor = stats["PvP"]["Total"]
             elif tipo == "pve":
@@ -54,7 +61,6 @@ async def enviar_ranking():
         print("⚠️ Canal no encontrado, revisá el ID")
         return
 
-    # Rankings que se enviarán automáticamente
     tipos = {
         "🏆 Fama Total": "total",
         "⚔️ PvP": "pvp",
@@ -74,7 +80,7 @@ async def enviar_ranking():
 @client.event
 async def on_ready():
     print(f"✅ Bot conectado como {client.user}")
-    # Programar la tarea diaria a las 23:00
+    # Scheduler para publicar automáticamente a las 23:00
     scheduler.add_job(lambda: asyncio.create_task(enviar_ranking()), "cron", hour=23, minute=0)
     scheduler.start()
 
@@ -123,3 +129,4 @@ async def on_message(message):
 
 
 client.run(TOKEN)
+

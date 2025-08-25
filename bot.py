@@ -90,56 +90,215 @@ def generar_grafico_ranking(ranking, titulo):
     plt.close()
     return archivo
 
-# ---------- COMPOSICIONES ----------
-composiciones = {
-    "mono": [
-        "https://cdn.discordapp.com/attachments/1374340969411117077/1374340970081943582/1_TANK_MONO.png",
-        "https://cdn.discordapp.com/attachments/1374340969411117077/1374340970765746236/2_SUPPORT_MONO.png",
-        "https://cdn.discordapp.com/attachments/1374340969411117077/1374340971352821830/3_DPS_MONO.png",
-        "https://cdn.discordapp.com/attachments/1374340969411117077/1374340971877236806/4_HEALER_MONO.png",
-        "https://cdn.discordapp.com/attachments/1374340969411117077/1374340972393140316/5_PRESS_MONO.png",
-        "https://cdn.discordapp.com/attachments/1374340969411117077/1374340972967624724/6_KITE_MONO.png"
-    ],
-    "golpe": [
-        "https://cdn.discordapp.com/attachments/1374338457438130267/1374338457870270524/1_TANKS_GOLPE.png",
-        "https://cdn.discordapp.com/attachments/1374338457438130267/1374338458423922728/2_SUPPORT_GOLPE.png",
-        "https://cdn.discordapp.com/attachments/1374338457438130267/1374338459073904640/3_DPS_GOLPE.png",
-        "https://cdn.discordapp.com/attachments/1374338457438130267/1374338459614842890/4_HEALER_GOLPE.png"
-    ],
-    "montura": [
-        "https://cdn.discordapp.com/attachments/1371393119458824232/1371393119727128616/BATTLE_MOUNT.png"
-    ]
-}
-
-async def mostrar_compo(ctx, nombre_compo, titulo):
-    urls = composiciones.get(nombre_compo.lower(), [])
-    if not urls:
-        await ctx.send("❌ No hay imágenes disponibles para esta composición.")
-        return
-    for url in urls:
-        embed = discord.Embed(title=titulo, color=discord.Color.blue())
-        embed.set_image(url=url)
-        await ctx.send(embed=embed)
-
-# ---------- ENVÍO DE GRÁFICOS ----------
 async def enviar_ranking_grafico(ctx, ranking, titulo, color):
     archivo = generar_grafico_ranking(ranking, titulo)
     embed = discord.Embed(title=titulo, color=color)
     embed.set_image(url=f"attachment://{archivo}")
     await ctx.send(file=discord.File(archivo), embed=embed)
 
-# ---------- COMANDOS DE COMPOS ----------
-@bot.command(name="compo_mono")
-async def compo_mono(ctx):
-    await mostrar_compo(ctx, "mono", "💥 Composición Mono")
+# ---------- FUNCIONES DIARIO ----------
+def guardar_datos_diarios(jugadores_stats):
+    data = {j["Name"]: j for j in jugadores_stats}
+    with open(DATA_FILE_DIARIO, "w", encoding="utf-8") as f:
+        json.dump(data, f)
 
-@bot.command(name="compo_golpe")
-async def compo_golpe(ctx):
-    await mostrar_compo(ctx, "golpe", "⚔️ Composición Golpe")
+def calcular_ranking_diario(jugadores_stats):
+    try:
+        with open(DATA_FILE_DIARIO, "r", encoding="utf-8") as f:
+            data_antigua = json.load(f)
+    except FileNotFoundError:
+        data_antigua = {}
 
-@bot.command(name="montura_batalla")
-async def montura_batalla(ctx):
-    await mostrar_compo(ctx, "montura", "🐴 Montura de Batalla")
+    ranking_diario = []
+    for j in jugadores_stats:
+        nombre = j["Name"]
+        anterior = data_antigua.get(nombre, {"PvP": 0, "PvE": 0, "Gathering": 0, "Crafting": 0})
+        incremento_total = (
+            (j["PvP"] - anterior.get("PvP", 0)) +
+            (j["PvE"] - anterior.get("PvE", 0)) +
+            (j["Gathering"] - anterior.get("Gathering", 0)) +
+            (j["Crafting"] - anterior.get("Crafting", 0))
+        )
+        ranking_diario.append({
+            "Name": nombre,
+            "PvP": j["PvP"] - anterior.get("PvP", 0),
+            "PvE": j["PvE"] - anterior.get("PvE", 0),
+            "Gathering": j["Gathering"] - anterior.get("Gathering", 0),
+            "Crafting": j["Crafting"] - anterior.get("Crafting", 0),
+            "Total": incremento_total
+        })
+    return ranking_diario
+
+def generar_ranking_diario_por_tipo(ranking_diario, tipo, top=10):
+    ranking = []
+    for j in ranking_diario:
+        if tipo == "total":
+            valor = j["Total"]
+        elif tipo.lower() == "pvp":
+            valor = j.get("PvP", 0)
+        elif tipo.lower() == "pve":
+            valor = j.get("PvE", 0)
+        elif tipo.lower() == "gathering":
+            valor = j.get("Gathering", 0)
+        elif tipo.lower() == "crafting":
+            valor = j.get("Crafting", 0)
+        else:
+            valor = 0
+        ranking.append((j["Name"], max(valor,0)))
+    ranking.sort(key=lambda x: x[1], reverse=True)
+    return ranking[:top]
+
+# ---------- FUNCIONES SEMANALES ----------
+def guardar_datos_semanales(jugadores_stats):
+    hoy = datetime.now(ZoneInfo("UTC")).strftime("%Y-%m-%d")
+    try:
+        with open(DATA_FILE_SEMANAL, "r", encoding="utf-8") as f:
+            data_semanal = json.load(f)
+    except FileNotFoundError:
+        data_semanal = {}
+
+    data_semanal[hoy] = {j["Name"]: j for j in jugadores_stats}
+    fechas = sorted(data_semanal.keys(), reverse=True)[:7]
+    data_semanal = {fecha: data_semanal[fecha] for fecha in fechas}
+
+    with open(DATA_FILE_SEMANAL, "w", encoding="utf-8") as f:
+        json.dump(data_semanal, f)
+
+def calcular_ranking_semanal(tipo, top=10):
+    try:
+        with open(DATA_FILE_SEMANAL, "r", encoding="utf-8") as f:
+            data_semanal = json.load(f)
+    except FileNotFoundError:
+        return []
+
+    acumulado = {}
+    for fecha, jugadores in data_semanal.items():
+        for name, stats in jugadores.items():
+            if name not in acumulado:
+                acumulado[name] = {"PvP":0, "PvE":0, "Gathering":0, "Crafting":0, "Total":0}
+            acumulado[name]["PvP"] += stats.get("PvP",0)
+            acumulado[name]["PvE"] += stats.get("PvE",0)
+            acumulado[name]["Gathering"] += stats.get("Gathering",0)
+            acumulado[name]["Crafting"] += stats.get("Crafting",0)
+            acumulado[name]["Total"] += stats.get("PvP",0) + stats.get("PvE",0) + stats.get("Gathering",0) + stats.get("Crafting",0)
+
+    ranking = []
+    for name, stats in acumulado.items():
+        if tipo == "total":
+            valor = stats["Total"]
+        elif tipo.lower() == "pvp":
+            valor = stats["PvP"]
+        elif tipo.lower() == "pve":
+            valor = stats["PvE"]
+        elif tipo.lower() == "gathering":
+            valor = stats["Gathering"]
+        elif tipo.lower() == "crafting":
+            valor = stats["Crafting"]
+        else:
+            valor = 0
+        ranking.append((name, valor))
+    ranking.sort(key=lambda x: x[1], reverse=True)
+    return ranking[:top]
+
+# ---------- COMANDOS DE RANKING ----------
+@bot.command(name="ranking", help="🏆 Top 10 Fama Total acumulativa")
+async def cmd_ranking(ctx):
+    jugadores_stats = await obtener_todos_los_datos_gremio()
+    ranking_data = generar_ranking(jugadores_stats, "total")
+    await enviar_ranking_grafico(ctx, ranking_data, "🏆 Fama Total", discord.Color.gold())
+
+@bot.command(name="pvp", help="⚔️ Top 10 PvP acumulativo")
+async def cmd_pvp(ctx):
+    jugadores_stats = await obtener_todos_los_datos_gremio()
+    ranking_data = generar_ranking(jugadores_stats, "pvp")
+    await enviar_ranking_grafico(ctx, ranking_data, "⚔️ PvP", discord.Color.red())
+
+@bot.command(name="pve", help="🐉 Top 10 PvE acumulativo")
+async def cmd_pve(ctx):
+    jugadores_stats = await obtener_todos_los_datos_gremio()
+    ranking_data = generar_ranking(jugadores_stats, "pve")
+    await enviar_ranking_grafico(ctx, ranking_data, "🐉 PvE", discord.Color.green())
+
+@bot.command(name="recoleccion", help="⛏️ Top 10 Recolección acumulativo")
+async def cmd_recoleccion(ctx):
+    jugadores_stats = await obtener_todos_los_datos_gremio()
+    ranking_data = generar_ranking(jugadores_stats, "gathering")
+    await enviar_ranking_grafico(ctx, ranking_data, "⛏️ Recolección", discord.Color.blue())
+
+@bot.command(name="fabricacion", help="⚒️ Top 10 Fabricación acumulativo")
+async def cmd_fabricacion(ctx):
+    jugadores_stats = await obtener_todos_los_datos_gremio()
+    ranking_data = generar_ranking(jugadores_stats, "crafting")
+    await enviar_ranking_grafico(ctx, ranking_data, "⚒️ Fabricación", discord.Color.dark_orange())
+
+# ---------- COMANDOS DE COMPOSICIONES ----------
+def obtener_imagenes_compo(tipo):
+    carpeta = "images"
+    comps = {
+        "mono": [
+            "1_TANK_MONO.png",
+            "2_SUPPORT_MONO.png",
+            "3_DPS_MONO.png",
+            "4_HEALER_MONO.png",
+            "5_PRESS_MONO.png",
+            "6_KITE_MONO.png"
+        ],
+        "golpe": [
+            "1_TANKS_GOLPE.png",
+            "2_SUPPORT_GOLPE.png",
+            "3_DPS_GOLPE.png",
+            "4_HEALER_GOLPE.png"
+        ],
+        "montura": [
+            "BATTLE_MOUNT.png"
+        ]
+    }
+    return [os.path.join(carpeta, img) for img in comps.get(tipo, [])]
+
+async def enviar_imagenes_compo(ctx, tipo, titulo):
+    imagenes = obtener_imagenes_compo(tipo)
+    for img in imagenes:
+        embed = discord.Embed(title=titulo, color=discord.Color.teal())
+        embed.set_image(url=f"attachment://{os.path.basename(img)}")
+        await ctx.send(file=discord.File(img), embed=embed)
+
+@bot.command(name="compo_mono", help="🐑 Mostrar composición Mono")
+async def cmd_compo_mono(ctx):
+    await enviar_imagenes_compo(ctx, "mono", "🐑 Composición Mono")
+
+@bot.command(name="compo_golpe", help="💥 Mostrar composición Golpe")
+async def cmd_compo_golpe(ctx):
+    await enviar_imagenes_compo(ctx, "golpe", "💥 Composición Golpe")
+
+@bot.command(name="compo_montura", help="🐴 Mostrar Montura de batalla")
+async def cmd_compo_montura(ctx):
+    await enviar_imagenes_compo(ctx, "montura", "🐴 Montura de batalla")
+
+# ---------- COMANDO AYUDA ----------
+@bot.command(name="ayuda", help="📜 Lista de todos los comandos")
+async def ayuda(ctx):
+    embed = discord.Embed(
+        title="📜 Comandos disponibles",
+        description="Aquí están todos los comandos del bot de Albion Online:",
+        color=discord.Color.purple()
+    )
+
+    comandos = [
+        ("🏆 !ranking", "Top 10 Fama Total acumulativa"),
+        ("⚔️ !pvp", "Top 10 PvP acumulativo"),
+        ("🐉 !pve", "Top 10 PvE acumulativo"),
+        ("⛏️ !recoleccion", "Top 10 Recolección acumulativo"),
+        ("⚒️ !fabricacion", "Top 10 Fabricación acumulativo"),
+        ("🐑 !compo_mono", "Mostrar composición Mono"),
+        ("💥 !compo_golpe", "Mostrar composición Golpe"),
+        ("🐴 !compo_montura", "Mostrar Montura de batalla")
+    ]
+
+    for nombre, desc in comandos:
+        embed.add_field(name=nombre, value=desc, inline=False)
+
+    embed.set_footer(text="Bot de Albion Online - Rankings y composiciones")
+    await ctx.send(embed=embed)
 
 # ---------- LOOP AUTOMÁTICO DIARIO ----------
 @tasks.loop(time=time(hour=23, minute=0, second=0))
@@ -161,32 +320,6 @@ async def publicar_ranking_diario():
         for tipo, titulo, color in tipos:
             ranking_data = generar_ranking_diario_por_tipo(ranking_d, tipo)
             await enviar_ranking_grafico(canal, ranking_data, titulo, color)
-
-# ---------- COMANDO AYUDA ----------
-@bot.command(name="ayuda", help="📜 Lista de todos los comandos")
-async def ayuda(ctx):
-    embed = discord.Embed(
-        title="📜 Comandos disponibles",
-        description="Aquí están todos los comandos del bot de Albion Online:",
-        color=discord.Color.purple()
-    )
-
-    comandos = [
-        ("🏆 !ranking", "Top 10 Fama Total acumulativa"),
-        ("⚔️ !pvp", "Top 10 PvP acumulativo"),
-        ("🐉 !pve", "Top 10 PvE acumulativo"),
-        ("⛏️ !recoleccion", "Top 10 Recolección acumulativo"),
-        ("⚒️ !fabricacion", "Top 10 Fabricación acumulativo"),
-        ("💥 !compo_mono", "Muestra la composición Mono"),
-        ("⚔️ !compo_golpe", "Muestra la composición Golpe"),
-        ("🐴 !montura_batalla", "Muestra la montura de batalla")
-    ]
-
-    for nombre, desc in comandos:
-        embed.add_field(name=nombre, value=desc, inline=False)
-
-    embed.set_footer(text="Bot de Albion Online - Rankings y composiciones")
-    await ctx.send(embed=embed)
 
 # ---------- EVENTO ON_READY ----------
 @bot.event

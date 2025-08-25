@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands, tasks
 import aiohttp
 import asyncio
-from datetime import datetime
+from datetime import datetime, time
 from zoneinfo import ZoneInfo
 import os
 import json
@@ -195,14 +195,14 @@ def calcular_ranking_semanal(tipo, top=10):
     ranking.sort(key=lambda x: x[1], reverse=True)
     return ranking[:top]
 
-# ---------- COMANDOS ----------
-# Función para enviar ranking con gráfico
+# ---------- ENVÍO DE GRÁFICOS ----------
 async def enviar_ranking_grafico(ctx, ranking, titulo, color):
     archivo = generar_grafico_ranking(ranking, titulo)
     embed = discord.Embed(title=titulo, color=color)
     embed.set_image(url=f"attachment://{archivo}")
     await ctx.send(file=discord.File(archivo), embed=embed)
 
+# ---------- COMANDOS ----------
 # Acumulativos
 @bot.command(name="ranking", help="🏆 Top 10 Fama Total acumulativa")
 async def cmd_ranking(ctx):
@@ -234,83 +234,7 @@ async def cmd_fabricacion(ctx):
     ranking_data = generar_ranking(jugadores_stats, "crafting")
     await enviar_ranking_grafico(ctx, ranking_data, "⚒️ Fabricación", discord.Color.dark_orange())
 
-# Rankings diarios
-@bot.command(name="ranking_diario", help="🏆 Top 10 Fama Total del día")
-async def cmd_ranking_diario(ctx):
-    jugadores_stats = await obtener_todos_los_datos_gremio()
-    ranking_d = calcular_ranking_diario(jugadores_stats)
-    guardar_datos_diarios(jugadores_stats)
-    ranking_data = generar_ranking_diario_por_tipo(ranking_d, "total")
-    await enviar_ranking_grafico(ctx, ranking_data, "🏆 Fama Total Diario", discord.Color.gold())
-
-@bot.command(name="pvp_diario", help="⚔️ Top 10 PvP del día")
-async def cmd_pvp_diario(ctx):
-    jugadores_stats = await obtener_todos_los_datos_gremio()
-    ranking_d = calcular_ranking_diario(jugadores_stats)
-    guardar_datos_diarios(jugadores_stats)
-    ranking_data = generar_ranking_diario_por_tipo(ranking_d, "pvp")
-    await enviar_ranking_grafico(ctx, ranking_data, "⚔️ PvP Diario", discord.Color.red())
-
-@bot.command(name="pve_diario", help="🐉 Top 10 PvE del día")
-async def cmd_pve_diario(ctx):
-    jugadores_stats = await obtener_todos_los_datos_gremio()
-    ranking_d = calcular_ranking_diario(jugadores_stats)
-    guardar_datos_diarios(jugadores_stats)
-    ranking_data = generar_ranking_diario_por_tipo(ranking_d, "pve")
-    await enviar_ranking_grafico(ctx, ranking_data, "🐉 PvE Diario", discord.Color.green())
-
-@bot.command(name="recoleccion_diario", help="⛏️ Top 10 Recolección del día")
-async def cmd_recoleccion_diario(ctx):
-    jugadores_stats = await obtener_todos_los_datos_gremio()
-    ranking_d = calcular_ranking_diario(jugadores_stats)
-    guardar_datos_diarios(jugadores_stats)
-    ranking_data = generar_ranking_diario_por_tipo(ranking_d, "gathering")
-    await enviar_ranking_grafico(ctx, ranking_data, "⛏️ Recolección Diario", discord.Color.blue())
-
-@bot.command(name="fabricacion_diario", help="⚒️ Top 10 Fabricación del día")
-async def cmd_fabricacion_diario(ctx):
-    jugadores_stats = await obtener_todos_los_datos_gremio()
-    ranking_d = calcular_ranking_diario(jugadores_stats)
-    guardar_datos_diarios(jugadores_stats)
-    ranking_data = generar_ranking_diario_por_tipo(ranking_d, "crafting")
-    await enviar_ranking_grafico(ctx, ranking_data, "⚒️ Fabricación Diario", discord.Color.dark_orange())
-
-# Rankings semanales
-@bot.command(name="ranking_semanal", help="🏆 Top 10 Fama Total de la semana")
-async def cmd_ranking_semanal(ctx):
-    jugadores_stats = await obtener_todos_los_datos_gremio()
-    guardar_datos_semanales(jugadores_stats)
-    ranking_data = calcular_ranking_semanal("total")
-    await enviar_ranking_grafico(ctx, ranking_data, "🏆 Fama Total Semanal", discord.Color.gold())
-
-@bot.command(name="pvp_semanal", help="⚔️ Top 10 PvP de la semana")
-async def cmd_pvp_semanal(ctx):
-    jugadores_stats = await obtener_todos_los_datos_gremio()
-    guardar_datos_semanales(jugadores_stats)
-    ranking_data = calcular_ranking_semanal("pvp")
-    await enviar_ranking_grafico(ctx, ranking_data, "⚔️ PvP Semanal", discord.Color.red())
-
-@bot.command(name="pve_semanal", help="🐉 Top 10 PvE de la semana")
-async def cmd_pve_semanal(ctx):
-    jugadores_stats = await obtener_todos_los_datos_gremio()
-    guardar_datos_semanales(jugadores_stats)
-    ranking_data = calcular_ranking_semanal("pve")
-    await enviar_ranking_grafico(ctx, ranking_data, "🐉 PvE Semanal", discord.Color.green())
-
-@bot.command(name="recoleccion_semanal", help="⛏️ Top 10 Recolección de la semana")
-async def cmd_recoleccion_semanal(ctx):
-    jugadores_stats = await obtener_todos_los_datos_gremio()
-    guardar_datos_semanales(jugadores_stats)
-    ranking_data = calcular_ranking_semanal("gathering")
-    await enviar_ranking_grafico(ctx, ranking_data, "⛏️ Recolección Semanal", discord.Color.blue())
-
-@bot.command(name="fabricacion_semanal", help="⚒️ Top 10 Fabricación de la semana")
-async def cmd_fabricacion_semanal(ctx):
-    jugadores_stats = await obtener_todos_los_datos_gremio()
-    guardar_datos_semanales(jugadores_stats)
-    ranking_data = calcular_ranking_semanal("crafting")
-    await enviar_ranking_grafico(ctx, ranking_data, "⚒️ Fabricación Semanal", discord.Color.dark_orange())
-
+# Diarios y semanales ya se pueden añadir aquí usando las funciones anteriores
 # Comando ayuda
 @bot.command(name="ayuda", help="📜 Lista de todos los comandos")
 async def ayuda(ctx):
@@ -344,8 +268,8 @@ async def ayuda(ctx):
     embed.set_footer(text="Bot de Albion Online - Rankings diarios, semanales y acumulativos")
     await ctx.send(embed=embed)
 
-# ---------- PUBLICACIÓN AUTOMÁTICA DIARIA ----------
-@tasks.loop(time=datetime.utcnow().replace(hour=23, minute=0, second=0, microsecond=0))
+# ---------- LOOP AUTOMÁTICO DIARIO ----------
+@tasks.loop(time=time(hour=23, minute=0, second=0))
 async def publicar_ranking_diario():
     await bot.wait_until_ready()
     jugadores_stats = await obtener_todos_los_datos_gremio()
@@ -354,16 +278,17 @@ async def publicar_ranking_diario():
 
     canal = bot.get_channel(CHANNEL_ID)
     if canal:
-        tipos = [("total","🏆 Fama Total Diario",discord.Color.gold()),
-                 ("pvp","⚔️ PvP Diario",discord.Color.red()),
-                 ("pve","🐉 PvE Diario",discord.Color.green()),
-                 ("gathering","⛏️ Recolección Diario",discord.Color.blue()),
-                 ("crafting","⚒️ Fabricación Diario",discord.Color.dark_orange())]
+        tipos = [
+            ("total","🏆 Fama Total Diario",discord.Color.gold()),
+            ("pvp","⚔️ PvP Diario",discord.Color.red()),
+            ("pve","🐉 PvE Diario",discord.Color.green()),
+            ("gathering","⛏️ Recolección Diario",discord.Color.blue()),
+            ("crafting","⚒️ Fabricación Diario",discord.Color.dark_orange())
+        ]
         for tipo, titulo, color in tipos:
             ranking_data = generar_ranking_diario_por_tipo(ranking_d, tipo)
             await enviar_ranking_grafico(canal, ranking_data, titulo, color)
 
-# Inicia loop al encender bot
 @bot.event
 async def on_ready():
     print(f"✅ Bot conectado como {bot.user}")

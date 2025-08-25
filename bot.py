@@ -1,126 +1,86 @@
 import os
 import discord
+from discord.ext import commands, tasks
 import requests
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import asyncio
+from datetime import datetime
 
-# Variables de entorno
+# ==============================
+# CONFIGURACIÓN DESDE VARIABLES DE ENTORNO
+# ==============================
 TOKEN = os.environ['TOKEN']
-GUILD_ID = os.environ['GUILD_ID']
-CHANNEL_ID = int(os.environ['CHANNEL_ID'])
+GUILD_ID = os.environ['GUILD_ID']   # ID del gremio Albion
+CHANNEL_ID = int(os.environ['CHANNEL_ID'])  # ID del canal donde publica
 
-# Intents para que el bot pueda leer mensajes
+# ==============================
+# INTENTS Y BOT
+# ==============================
 intents = discord.Intents.default()
 intents.message_content = True
-client = discord.Client(intents=intents)
-scheduler = AsyncIOScheduler()
+intents.members = True
 
-def obtener_ranking(tipo: str, limite: int = 10):
-    miembros = requests.get(
-        f"https://gameinfo.albiononline.com/api/gameinfo/guilds/{GUILD_ID}/members"
-    ).json()
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-    ranking = []
-    for m in miembros:
-        try:
-            player = requests.get(
-                f"https://gameinfo.albiononline.com/api/gameinfo/players/{m['Id']}"
-            ).json()
+# ==============================
+# FUNCIONES PARA TRAER DATOS DE ALBION
+# ==============================
+def get_guild_stats(guild_id):
+    url = f"https://gameinfo.albiononline.com/api/gameinfo/guilds/{guild_id}/members"
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.json()
+    return []
 
-            stats = player["LifetimeStatistics"]
+def get_top_by_fame(guild_id, fame_type="KillFame"):
+    members = get_guild_stats(guild_id)
+    ranking = sorted(members, key=lambda x: x.get(fame_type, 0), reverse=True)[:10]
+    return ranking
 
-            if tipo == "total":
-                valor = (
-                    stats["PvE"]["Total"]
-                    + stats["PvP"]["Total"]
-                    + stats["Gathering"]["All"]["Total"]
-                    + stats["Crafting"]["Total"]
-                )
-            elif tipo == "pvp":
-                valor = stats["PvP"]["Total"]
-            elif tipo == "pve":
-                valor = stats["PvE"]["Total"]
-            elif tipo == "recoleccion":
-                valor = stats["Gathering"]["All"]["Total"]
-            elif tipo == "fabricacion":
-                valor = stats["Crafting"]["Total"]
-            else:
-                valor = 0
+def format_ranking(ranking, fame_type):
+    lines = []
+    for i, member in enumerate(ranking, start=1):
+        fame = member.get(fame_type, 0)
+        lines.append(f"**{i}. {member['Name']}** — {fame:,} fama")
+    return "\n".join(lines)
 
-            ranking.append((m["Name"], valor))
-        except:
-            pass
+# ==============================
+# COMANDOS
+# ==============================
+@bot.command(name="ranking")
+async def ranking(ctx):
+    ranking = get_top_by_fame(GUILD_ID, "KillFame")
+    msg = format_ranking(ranking, "KillFame")
+    await ctx.send(f"🏆 **Top 10 - Ranking General (PvP Kill Fame)** 🏆\n\n{msg}")
 
-    ranking.sort(key=lambda x: x[1], reverse=True)
-    return ranking[:limite]
+@bot.command(name="pvp")
+async def pvp(ctx):
+    ranking = get_top_by_fame(GUILD_ID, "KillFame")
+    msg = format_ranking(ranking, "KillFame")
+    await ctx.send(f"⚔️ **Top 10 PvP (Kill Fame)** ⚔️\n\n{msg}")
 
-async def enviar_ranking():
-    canal = client.get_channel(CHANNEL_ID)
-    if canal is None:
-        print("⚠️ Canal no encontrado, revisá el ID")
-        return
+@bot.command(name="recoleccion")
+async def recoleccion(ctx):
+    ranking = get_top_by_fame(GUILD_ID, "GatheringFame")
+    msg = format_ranking(ranking, "GatheringFame")
+    await ctx.send(f"🌿 **Top 10 Recolección (Gathering Fame)** 🌿\n\n{msg}")
 
-    tipos = {
-        "🏆 Fama Total": "total",
-        "⚔️ PvP": "pvp",
-        "🐉 PvE": "pve",
-        "⛏️ Recolección": "recoleccion",
-        "⚒️ Fabricación": "fabricacion"
-    }
+@bot.command(name="fabricacion")
+async def fabricacion(ctx):
+    ranking = get_top_by_fame(GUILD_ID, "CraftingFame")
+    msg = format_ranking(ranking, "CraftingFame")
+    await ctx.send(f"⚒️ **Top 10 Fabricación (Crafting Fame)** ⚒️\n\n{msg}")
 
-    for titulo, tipo in tipos.items():
-        ranking = obtener_ranking(tipo)
-        mensaje = f"**{titulo} - Top 10 diario**\n\n"
-        for i, (name, valor) in enumerate(ranking, start=1):
-            mensaje += f"**{i}. {name}** - {valor:,}\n"
-        await canal.send(mensaje)
+# ==============================
+# TAREA AUTOMÁTICA TODOS LOS DÍAS 23:00
+# ==============================
+@tasks.loop(minutes=1)
+async def daily_ranking():
+    now = datetime.utcnow().strftime("%H:%M")
+    if now == "23:00":  # hora UTC, ajusta si querés horario argentino
+        channel = bot.get_channel(CHANNEL_ID)
+        if channel:
+            ranking = get_top_by_fame(GUILD_ID, "KillFame")
+            msg = format_ranking(ranking, "KillFame")
+            await channel.send(f"📅 **Ranking diario de PvP** 📅\n\n{msg}")
 
-@client.event
-async def on_ready():
-    print(f"✅ Bot conectado como {client.user}")
-    scheduler.add_job(lambda: asyncio.create_task(enviar_ranking()), "cron", hour=23, minute=0)
-    scheduler.start()
-
-@client.event
-async def on_message(message):
-    if message.author.bot:
-        return
-
-    comando = message.content.lower()
-
-    if comando.startswith("!help"):
-        respuesta = (
-            "**📜 Comandos disponibles:**\n\n"
-            "`!ranking` → Top 10 por fama total\n"
-            "`!pvp` → Top 10 por fama PvP ⚔️\n"
-            "`!pve` → Top 10 por fama PvE 🐉\n"
-            "`!recoleccion` → Top 10 por recolección ⛏️\n"
-            "`!fabricacion` → Top 10 por fabricación ⚒️\n"
-        )
-        await message.channel.send(respuesta)
-
-    elif comando.startswith("!ranking"):
-        ranking = obtener_ranking("total")
-        respuesta = "**🏆 Ranking de Fama Total 🏆**\n\n"
-    elif comando.startswith("!pvp"):
-        ranking = obtener_ranking("pvp")
-        respuesta = "**⚔️ Ranking PvP ⚔️**\n\n"
-    elif comando.startswith("!pve"):
-        ranking = obtener_ranking("pve")
-        respuesta = "**🐉 Ranking PvE 🐉**\n\n"
-    elif comando.startswith("!recoleccion"):
-        ranking = obtener_ranking("recoleccion")
-        respuesta = "**⛏️ Ranking Recolección ⛏️**\n\n"
-    elif comando.startswith("!fabricacion"):
-        ranking = obtener_ranking("fabricacion")
-        respuesta = "**⚒️ Ranking Fabricación ⚒️**\n\n"
-    else:
-        return
-
-    if not comando.startswith("!help"):
-        for i, (name, valor) in enumerate(ranking, start=1):
-            respuesta += f"**{i}. {name}** - {valor:,}\n"
-
-        await message.channel.send(respuesta)
-
-client.run(TOKEN)
+@daily_ranking.before_lo

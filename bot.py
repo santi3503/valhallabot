@@ -9,10 +9,11 @@ TOKEN = os.environ['TOKEN']
 GUILD_ID = os.environ['GUILD_ID']
 CHANNEL_ID = int(os.environ['CHANNEL_ID'])
 
+# Intents para que el bot pueda leer mensajes
 intents = discord.Intents.default()
+intents.message_content = True
 client = discord.Client(intents=intents)
 scheduler = AsyncIOScheduler()
-
 
 def obtener_ranking(tipo: str, limite: int = 10):
     miembros = requests.get(
@@ -20,7 +21,6 @@ def obtener_ranking(tipo: str, limite: int = 10):
     ).json()
 
     ranking = []
-
     for m in miembros:
         try:
             player = requests.get(
@@ -54,7 +54,6 @@ def obtener_ranking(tipo: str, limite: int = 10):
     ranking.sort(key=lambda x: x[1], reverse=True)
     return ranking[:limite]
 
-
 async def enviar_ranking():
     canal = client.get_channel(CHANNEL_ID)
     if canal is None:
@@ -76,14 +75,11 @@ async def enviar_ranking():
             mensaje += f"**{i}. {name}** - {valor:,}\n"
         await canal.send(mensaje)
 
-
 @client.event
 async def on_ready():
     print(f"✅ Bot conectado como {client.user}")
-    # Scheduler para publicar automáticamente a las 23:00
     scheduler.add_job(lambda: asyncio.create_task(enviar_ranking()), "cron", hour=23, minute=0)
     scheduler.start()
-
 
 @client.event
 async def on_message(message):
@@ -95,11 +91,11 @@ async def on_message(message):
     if comando.startswith("!help"):
         respuesta = (
             "**📜 Comandos disponibles:**\n\n"
-            "`!ranking` → Top 10 por fama total (PvE + PvP + Recolección + Fabricación)\n"
+            "`!ranking` → Top 10 por fama total\n"
             "`!pvp` → Top 10 por fama PvP ⚔️\n"
             "`!pve` → Top 10 por fama PvE 🐉\n"
-            "`!recoleccion` → Top 10 por fama de recolección ⛏️\n"
-            "`!fabricacion` → Top 10 por fama de fabricación ⚒️\n"
+            "`!recoleccion` → Top 10 por recolección ⛏️\n"
+            "`!fabricacion` → Top 10 por fabricación ⚒️\n"
         )
         await message.channel.send(respuesta)
 
@@ -127,6 +123,4 @@ async def on_message(message):
 
         await message.channel.send(respuesta)
 
-
 client.run(TOKEN)
-

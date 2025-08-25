@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands, tasks
 import asyncio
 from datetime import datetime, timedelta
-import pytz
+from zoneinfo import ZoneInfo
 import os
 
 TOKEN = os.environ['TOKEN']
@@ -31,7 +31,7 @@ async def ranking_diario():
 @ranking_diario.before_loop
 async def antes_de_loop():
     # Espera hasta las 23:00 UTC exactas para arrancar
-    ahora = datetime.now(pytz.UTC)
+    ahora = datetime.now(ZoneInfo("UTC"))
     proxima = ahora.replace(hour=23, minute=0, second=0, microsecond=0)
 
     if proxima <= ahora:

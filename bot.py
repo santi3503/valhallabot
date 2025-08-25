@@ -13,7 +13,7 @@ CHANNEL_ID = int(os.environ['CHANNEL_ID'])
 
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)  # help_command=None para evitar conflicto
 
 BASE_URL = "https://gameinfo.albiononline.com/api/gameinfo"
 
@@ -73,35 +73,35 @@ def crear_embed(ranking, titulo, color):
 
 
 # ---------- COMANDOS MANUALES ----------
-@bot.command(name="ranking")
+@bot.command(name="ranking", help="🏆 Muestra el Top 10 de Fama Total")
 async def ranking(ctx):
     jugadores_stats = await obtener_todos_los_datos_gremio()
     ranking_data = generar_ranking(jugadores_stats, "total")
     embed = crear_embed(ranking_data, "🏆 Fama Total", discord.Color.gold())
     await ctx.send(embed=embed)
 
-@bot.command(name="pvp")
+@bot.command(name="pvp", help="⚔️ Muestra el Top 10 de Fama PvP")
 async def pvp(ctx):
     jugadores_stats = await obtener_todos_los_datos_gremio()
     ranking_data = generar_ranking(jugadores_stats, "pvp")
     embed = crear_embed(ranking_data, "⚔️ PvP", discord.Color.red())
     await ctx.send(embed=embed)
 
-@bot.command(name="pve")
+@bot.command(name="pve", help="🐉 Muestra el Top 10 de Fama PvE")
 async def pve(ctx):
     jugadores_stats = await obtener_todos_los_datos_gremio()
     ranking_data = generar_ranking(jugadores_stats, "pve")
     embed = crear_embed(ranking_data, "🐉 PvE", discord.Color.green())
     await ctx.send(embed=embed)
 
-@bot.command(name="recoleccion")
+@bot.command(name="recoleccion", help="⛏️ Muestra el Top 10 de Fama de Recolección")
 async def recoleccion(ctx):
     jugadores_stats = await obtener_todos_los_datos_gremio()
     ranking_data = generar_ranking(jugadores_stats, "gathering")
     embed = crear_embed(ranking_data, "⛏️ Recolección", discord.Color.blue())
     await ctx.send(embed=embed)
 
-@bot.command(name="fabricacion")
+@bot.command(name="fabricacion", help="⚒️ Muestra el Top 10 de Fama de Fabricación")
 async def fabricacion(ctx):
     jugadores_stats = await obtener_todos_los_datos_gremio()
     ranking_data = generar_ranking(jugadores_stats, "crafting")
@@ -109,9 +109,9 @@ async def fabricacion(ctx):
     await ctx.send(embed=embed)
 
 
-# ---------- COMANDO HELP AUTOMÁTICO ----------
-@bot.command(name="help")
-async def help_comandos(ctx):
+# ---------- COMANDO DE AYUDA ----------
+@bot.command(name="ayuda", help="📜 Muestra todos los comandos disponibles")
+async def ayuda(ctx):
     embed = discord.Embed(title="📜 Comandos disponibles", color=discord.Color.purple())
     for comando in bot.commands:
         descripcion = comando.help if comando.help else "No hay descripción."

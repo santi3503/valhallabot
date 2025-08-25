@@ -11,7 +11,8 @@ import json
 TOKEN = os.environ['TOKEN']
 GUILD_ID = os.environ['GUILD_ID']
 CHANNEL_ID = int(os.environ['CHANNEL_ID'])
-DATA_FILE = "ranking_diario.json"  # Archivo donde guardamos los valores diarios
+DATA_FILE_DIARIO = "ranking_diario.json"
+DATA_FILE_SEMANAL = "ranking_semanal.json"
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -28,7 +29,6 @@ async def get_json(session, url):
     except Exception as e:
         print(f"Error al consultar {url}: {e}")
     return None
-
 
 async def obtener_todos_los_datos_gremio():
     async with aiohttp.ClientSession() as session:
@@ -51,18 +51,24 @@ async def obtener_todos_los_datos_gremio():
                 })
         return jugadores_stats
 
-
 def generar_ranking(jugadores_stats, tipo, top=10):
     ranking = []
     for j in jugadores_stats:
         if tipo == "total":
             valor = j["PvP"] + j["PvE"] + j["Gathering"] + j["Crafting"]
+        elif tipo.lower() == "pvp":
+            valor = j.get("PvP", 0)
+        elif tipo.lower() == "pve":
+            valor = j.get("PvE", 0)
+        elif tipo.lower() == "gathering":
+            valor = j.get("Gathering", 0)
+        elif tipo.lower() == "crafting":
+            valor = j.get("Crafting", 0)
         else:
-            valor = j.get(tipo.capitalize(), 0)
+            valor = 0
         ranking.append((j["Name"], valor))
     ranking.sort(key=lambda x: x[1], reverse=True)
     return ranking[:top]
-
 
 def crear_embed(ranking, titulo, color):
     embed = discord.Embed(title=titulo, color=color)
@@ -73,17 +79,15 @@ def crear_embed(ranking, titulo, color):
     embed.set_footer(text="Ranking de Albion Online")
     return embed
 
-
-# ---------- FUNCIONES RANKING DIARIO ----------
+# ---------- FUNCIONES DIARIO ----------
 def guardar_datos_diarios(jugadores_stats):
     data = {j["Name"]: j for j in jugadores_stats}
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
+    with open(DATA_FILE_DIARIO, "w", encoding="utf-8") as f:
         json.dump(data, f)
-
 
 def calcular_ranking_diario(jugadores_stats):
     try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
+        with open(DATA_FILE_DIARIO, "r", encoding="utf-8") as f:
             data_antigua = json.load(f)
     except FileNotFoundError:
         data_antigua = {}
@@ -108,58 +112,118 @@ def calcular_ranking_diario(jugadores_stats):
         })
     return ranking_diario
 
-
 def generar_ranking_diario_por_tipo(ranking_diario, tipo, top=10):
     ranking = []
     for j in ranking_diario:
         if tipo == "total":
             valor = j["Total"]
+        elif tipo.lower() == "pvp":
+            valor = j.get("PvP", 0)
+        elif tipo.lower() == "pve":
+            valor = j.get("PvE", 0)
+        elif tipo.lower() == "gathering":
+            valor = j.get("Gathering", 0)
+        elif tipo.lower() == "crafting":
+            valor = j.get("Crafting", 0)
         else:
-            valor = j.get(tipo.capitalize(), 0)
+            valor = 0
         ranking.append((j["Name"], max(valor,0)))
     ranking.sort(key=lambda x: x[1], reverse=True)
     return ranking[:top]
 
+# ---------- FUNCIONES SEMANALES ----------
+def guardar_datos_semanales(jugadores_stats):
+    hoy = datetime.now(ZoneInfo("UTC")).strftime("%Y-%m-%d")
+    try:
+        with open(DATA_FILE_SEMANAL, "r", encoding="utf-8") as f:
+            data_semanal = json.load(f)
+    except FileNotFoundError:
+        data_semanal = {}
 
-# ---------- COMANDOS MANUALES ----------
-@bot.command(name="ranking", help="🏆 Muestra el Top 10 de Fama Total acumulada")
+    data_semanal[hoy] = {j["Name"]: j for j in jugadores_stats}
+
+    # Mantener solo los últimos 7 días
+    fechas = sorted(data_semanal.keys(), reverse=True)[:7]
+    data_semanal = {fecha: data_semanal[fecha] for fecha in fechas}
+
+    with open(DATA_FILE_SEMANAL, "w", encoding="utf-8") as f:
+        json.dump(data_semanal, f)
+
+def calcular_ranking_semanal(tipo, top=10):
+    try:
+        with open(DATA_FILE_SEMANAL, "r", encoding="utf-8") as f:
+            data_semanal = json.load(f)
+    except FileNotFoundError:
+        return []
+
+    acumulado = {}
+    for fecha, jugadores in data_semanal.items():
+        for name, stats in jugadores.items():
+            if name not in acumulado:
+                acumulado[name] = {"PvP":0, "PvE":0, "Gathering":0, "Crafting":0, "Total":0}
+            acumulado[name]["PvP"] += stats.get("PvP",0)
+            acumulado[name]["PvE"] += stats.get("PvE",0)
+            acumulado[name]["Gathering"] += stats.get("Gathering",0)
+            acumulado[name]["Crafting"] += stats.get("Crafting",0)
+            acumulado[name]["Total"] += stats.get("PvP",0) + stats.get("PvE",0) + stats.get("Gathering",0) + stats.get("Crafting",0)
+
+    ranking = []
+    for name, stats in acumulado.items():
+        if tipo == "total":
+            valor = stats["Total"]
+        elif tipo.lower() == "pvp":
+            valor = stats["PvP"]
+        elif tipo.lower() == "pve":
+            valor = stats["PvE"]
+        elif tipo.lower() == "gathering":
+            valor = stats["Gathering"]
+        elif tipo.lower() == "crafting":
+            valor = stats["Crafting"]
+        else:
+            valor = 0
+        ranking.append((name, valor))
+    ranking.sort(key=lambda x: x[1], reverse=True)
+    return ranking[:top]
+
+# ---------- COMANDOS ----------
+# Acumulativos
+@bot.command(name="ranking")
 async def ranking(ctx):
     jugadores_stats = await obtener_todos_los_datos_gremio()
     ranking_data = generar_ranking(jugadores_stats, "total")
     embed = crear_embed(ranking_data, "🏆 Fama Total", discord.Color.gold())
     await ctx.send(embed=embed)
 
-@bot.command(name="pvp", help="⚔️ Muestra el Top 10 de Fama PvP acumulada")
+@bot.command(name="pvp")
 async def pvp(ctx):
     jugadores_stats = await obtener_todos_los_datos_gremio()
     ranking_data = generar_ranking(jugadores_stats, "pvp")
     embed = crear_embed(ranking_data, "⚔️ PvP", discord.Color.red())
     await ctx.send(embed=embed)
 
-@bot.command(name="pve", help="🐉 Muestra el Top 10 de Fama PvE acumulada")
+@bot.command(name="pve")
 async def pve(ctx):
     jugadores_stats = await obtener_todos_los_datos_gremio()
     ranking_data = generar_ranking(jugadores_stats, "pve")
     embed = crear_embed(ranking_data, "🐉 PvE", discord.Color.green())
     await ctx.send(embed=embed)
 
-@bot.command(name="recoleccion", help="⛏️ Muestra el Top 10 de Fama de Recolección acumulada")
+@bot.command(name="recoleccion")
 async def recoleccion(ctx):
     jugadores_stats = await obtener_todos_los_datos_gremio()
     ranking_data = generar_ranking(jugadores_stats, "gathering")
     embed = crear_embed(ranking_data, "⛏️ Recolección", discord.Color.blue())
     await ctx.send(embed=embed)
 
-@bot.command(name="fabricacion", help="⚒️ Muestra el Top 10 de Fama de Fabricación acumulada")
+@bot.command(name="fabricacion")
 async def fabricacion(ctx):
     jugadores_stats = await obtener_todos_los_datos_gremio()
     ranking_data = generar_ranking(jugadores_stats, "crafting")
     embed = crear_embed(ranking_data, "⚒️ Fabricación", discord.Color.dark_grey())
     await ctx.send(embed=embed)
 
-
-# ---------- NUEVOS COMANDOS DIARIOS ----------
-@bot.command(name="ranking_diario", help="📅 Muestra el Top 10 de Fama Total del día")
+# Diarios
+@bot.command(name="ranking_diario")
 async def ranking_diario_cmd(ctx):
     jugadores_stats = await obtener_todos_los_datos_gremio()
     ranking_diario_data = calcular_ranking_diario(jugadores_stats)
@@ -167,7 +231,7 @@ async def ranking_diario_cmd(ctx):
     embed = crear_embed(ranking_data, "🏆 Ranking Diario Total", discord.Color.gold())
     await ctx.send(embed=embed)
 
-@bot.command(name="pvp_diario", help="⚔️ Muestra el Top 10 PvP del día")
+@bot.command(name="pvp_diario")
 async def pvp_diario_cmd(ctx):
     jugadores_stats = await obtener_todos_los_datos_gremio()
     ranking_diario_data = calcular_ranking_diario(jugadores_stats)
@@ -175,7 +239,7 @@ async def pvp_diario_cmd(ctx):
     embed = crear_embed(ranking_data, "⚔️ PvP Diario", discord.Color.red())
     await ctx.send(embed=embed)
 
-@bot.command(name="pve_diario", help="🐉 Muestra el Top 10 PvE del día")
+@bot.command(name="pve_diario")
 async def pve_diario_cmd(ctx):
     jugadores_stats = await obtener_todos_los_datos_gremio()
     ranking_diario_data = calcular_ranking_diario(jugadores_stats)
@@ -183,7 +247,7 @@ async def pve_diario_cmd(ctx):
     embed = crear_embed(ranking_data, "🐉 PvE Diario", discord.Color.green())
     await ctx.send(embed=embed)
 
-@bot.command(name="recoleccion_diario", help="⛏️ Muestra el Top 10 Recolección del día")
+@bot.command(name="recoleccion_diario")
 async def recoleccion_diario_cmd(ctx):
     jugadores_stats = await obtener_todos_los_datos_gremio()
     ranking_diario_data = calcular_ranking_diario(jugadores_stats)
@@ -191,7 +255,7 @@ async def recoleccion_diario_cmd(ctx):
     embed = crear_embed(ranking_data, "⛏️ Recolección Diario", discord.Color.blue())
     await ctx.send(embed=embed)
 
-@bot.command(name="fabricacion_diario", help="⚒️ Muestra el Top 10 Fabricación del día")
+@bot.command(name="fabricacion_diario")
 async def fabricacion_diario_cmd(ctx):
     jugadores_stats = await obtener_todos_los_datos_gremio()
     ranking_diario_data = calcular_ranking_diario(jugadores_stats)
@@ -199,19 +263,48 @@ async def fabricacion_diario_cmd(ctx):
     embed = crear_embed(ranking_data, "⚒️ Fabricación Diario", discord.Color.dark_grey())
     await ctx.send(embed=embed)
 
+# Semanales
+@bot.command(name="ranking_semanal")
+async def ranking_semanal_cmd(ctx):
+    ranking_data = calcular_ranking_semanal("total")
+    embed = crear_embed(ranking_data, "🏆 Ranking Semanal Total", discord.Color.gold())
+    await ctx.send(embed=embed)
 
-# ---------- COMANDO DE AYUDA ----------
-@bot.command(name="ayuda", help="📜 Muestra todos los comandos disponibles")
+@bot.command(name="pvp_semanal")
+async def pvp_semanal_cmd(ctx):
+    ranking_data = calcular_ranking_semanal("pvp")
+    embed = crear_embed(ranking_data, "⚔️ PvP Semanal", discord.Color.red())
+    await ctx.send(embed=embed)
+
+@bot.command(name="pve_semanal")
+async def pve_semanal_cmd(ctx):
+    ranking_data = calcular_ranking_semanal("pve")
+    embed = crear_embed(ranking_data, "🐉 PvE Semanal", discord.Color.green())
+    await ctx.send(embed=embed)
+
+@bot.command(name="recoleccion_semanal")
+async def recoleccion_semanal_cmd(ctx):
+    ranking_data = calcular_ranking_semanal("gathering")
+    embed = crear_embed(ranking_data, "⛏️ Recolección Semanal", discord.Color.blue())
+    await ctx.send(embed=embed)
+
+@bot.command(name="fabricacion_semanal")
+async def fabricacion_semanal_cmd(ctx):
+    ranking_data = calcular_ranking_semanal("crafting")
+    embed = crear_embed(ranking_data, "⚒️ Fabricación Semanal", discord.Color.dark_grey())
+    await ctx.send(embed=embed)
+
+# Comando ayuda
+@bot.command(name="ayuda")
 async def ayuda(ctx):
     embed = discord.Embed(title="📜 Comandos disponibles", color=discord.Color.purple())
     for comando in bot.commands:
         descripcion = comando.help if comando.help else "No hay descripción."
         embed.add_field(name=f"!{comando.name}", value=descripcion, inline=False)
-    embed.set_footer(text="Bot de Albion Online - Rankings diarios y comandos manuales")
+    embed.set_footer(text="Bot de Albion Online - Rankings diarios, semanales y acumulativos")
     await ctx.send(embed=embed)
 
-
-# ---------- LOOP DEL RANKING DIARIO ----------
+# ---------- LOOP AUTOMÁTICO DIARIO ----------
 @tasks.loop(hours=24)
 async def ranking_diario_loop():
     try:
@@ -222,6 +315,7 @@ async def ranking_diario_loop():
 
         jugadores_stats = await obtener_todos_los_datos_gremio()
         ranking_diario_data = calcular_ranking_diario(jugadores_stats)
+
         tipos = {
             "🏆 Fama Total Diario": ("total", discord.Color.gold()),
             "⚔️ PvP Diario": ("pvp", discord.Color.red()),
@@ -235,13 +329,13 @@ async def ranking_diario_loop():
             embed = crear_embed(ranking_data, titulo, color)
             await channel.send(embed=embed)
 
-        # Guardar los datos actuales para el siguiente día
+        # Guardar datos diarios y semanales
         guardar_datos_diarios(jugadores_stats)
+        guardar_datos_semanales(jugadores_stats)
 
-        print("✅ Rankings diarios enviados correctamente.")
+        print("✅ Rankings diarios y semanales guardados y enviados correctamente.")
     except Exception as e:
         print(f"❌ Error enviando los rankings: {e}")
-
 
 @ranking_diario_loop.before_loop
 async def antes_de_loop():
@@ -253,7 +347,6 @@ async def antes_de_loop():
     print(f"⏳ Esperando {espera/3600:.2f} horas hasta las 23:00 UTC para iniciar ranking diario.")
     await asyncio.sleep(espera)
 
-
 # ---------- EVENTOS ----------
 @bot.event
 async def on_ready():
@@ -261,7 +354,6 @@ async def on_ready():
     if not ranking_diario_loop.is_running():
         ranking_diario_loop.start()
         print("▶️ Tarea 'ranking_diario_loop' iniciada.")
-
 
 # ---------- INICIO ----------
 bot.run(TOKEN)
